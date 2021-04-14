@@ -1,0 +1,269 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "AWS CloudFormation template for misc resources for IoT workshops.",
+
+  "Resources": {
+    "S3Bucket": {
+      "Type": "AWS::S3::Bucket"
+    },
+
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "192.168.128.0/24",
+        "EnableDnsSupport": true,
+        "EnableDnsHostnames": true,
+        "Tags": [
+          { "Key": "CFN Stack", "Value": { "Ref": "AWS::StackName" } },
+          { "Key": "Name", "Value": "Workshop VPC 192.168.128.0/24" }
+        ]
+      }
+    },
+
+    "PubSubnetA": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "AvailabilityZone": {
+          "Fn::Join": ["", [{ "Ref": "AWS::Region" }, "a"]]
+        },
+        "CidrBlock": "192.168.128.0/25",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          { "Key": "CFN Stack", "Value": { "Ref": "AWS::StackName" } },
+          { "Key": "Name", "Value": "Workshop subnet 192.168.128.0/25" }
+        ]
+      }
+    },
+
+    "PubSubnetB": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "AvailabilityZone": {
+          "Fn::Join": ["", [{ "Ref": "AWS::Region" }, "a"]]
+        },
+        "CidrBlock": "192.168.128.128/25",
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          { "Key": "CFN Stack", "Value": { "Ref": "AWS::StackName" } },
+          { "Key": "Name", "Value": "Workshop subnet 192.168.128.128/25" }
+        ]
+      }
+    },
+
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          { "Key": "CFN Stack", "Value": { "Ref": "AWS::StackName" } },
+          { "Key": "Name", "Value": "IoT workshop" }
+        ]
+      }
+    },
+
+    "GatewayToInternet": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "InternetGatewayId": { "Ref": "InternetGateway" }
+      }
+    },
+
+    "PublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": "GatewayToInternet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "Tags": [
+          { "Key": "CFN Stack", "Value": { "Ref": "AWS::StackName" } },
+          { "Key": "Name", "Value": "IoT workshop" }
+        ]
+      }
+    },
+
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": { "Ref": "PublicRouteTable" },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": { "Ref": "InternetGateway" }
+      }
+    },
+
+    "PubSubnetARTAssoc": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "PubSubnetA" },
+        "RouteTableId": { "Ref": "PublicRouteTable" }
+      }
+    },
+    "PubSubnetBRTAssoc": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "PubSubnetB" },
+        "RouteTableId": { "Ref": "PublicRouteTable" }
+      }
+    },
+
+    "GGOtaS3UrlSignerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": ["iot.amazonaws.com"]
+              },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": {
+              "Fn::Join": [
+                "-",
+                ["GGOtaS3UrlSignerPolicy", { "Ref": "AWS::Region" }]
+              ]
+            },
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": ["s3:GetObject"],
+                  "Resource": [
+                    "arn:aws:s3:::eu-central-1-greengrass-updates/*",
+                    "arn:aws:s3:::eu-west-1-greengrass-updates/*",
+                    "arn:aws:s3:::us-east-1-greengrass-updates/*",
+                    "arn:aws:s3:::ap-northeast-1-greengrass-updates/*",
+                    "arn:aws:s3:::us-west-2-greengrass-updates/*",
+                    "arn:aws:s3:::ap-southeast-2-greengrass-updates/*"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "Path": "/service-role/"
+      }
+    },
+
+    "IoTPolicy": {
+      "Type": "AWS::IoT::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["iot:*"],
+              "Resource": ["*"]
+            }
+          ]
+        }
+      }
+    },
+
+    "IoTServiceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": ["iot.amazonaws.com"]
+              },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": {
+              "Fn::Join": [
+                "",
+                ["IoTWSIoTServicePolicy-", { "Ref": "AWS::Region" }]
+              ]
+            },
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "iotsitewise:BatchPutAssetPropertyValue",
+                    "iotanalytics:BatchPutMessage",
+                    "iotevents:BatchPutMessage"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ],
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSIoTThingsRegistration",
+          "arn:aws:iam::aws:policy/service-role/AWSIoTLogging",
+          "arn:aws:iam::aws:policy/service-role/AWSIoTRuleActions",
+          "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+        ],
+        "Path": "/service-role/"
+      }
+    }
+  },
+
+  "Outputs": {
+    "VpcId": {
+      "Value": { "Ref": "VPC" },
+      "Exports": {
+        "Name": {
+          "Fn::Join": [":", [{ "Ref": "AWS::StackName" }, "VpcId"]]
+        }
+      }
+    },
+    "PubSubnetIdA": {
+      "Value": { "Ref": "PubSubnetA" },
+      "Exports": {
+        "Name": {
+          "Fn::Join": [":", [{ "Ref": "AWS::StackName" }, "PubSubnetA"]]
+        }
+      }
+    },
+    "PubSubnetIdB": {
+      "Value": { "Ref": "PubSubnetB" },
+      "Exports": {
+        "Name": {
+          "Fn::Join": [":", [{ "Ref": "AWS::StackName" }, "PubSubnetB"]]
+        }
+      }
+    },
+    "S3BucketName": {
+      "Value": { "Ref": "S3Bucket" }
+    },
+    "S3BucketArn": {
+      "Value": { "Fn::GetAtt": ["S3Bucket", "Arn"] }
+    },
+
+    "IoTPolicy": {
+      "Description": "Name of an IoT policy",
+      "Value": { "Ref": "IoTPolicy" }
+    },
+    "IoTServiceRoleArn": {
+      "Description": "Role Arn for IoT device provisiong",
+      "Value": { "Fn::GetAtt": ["IoTServiceRole", "Arn"] }
+    },
+    "IoTServiceRoleName": {
+      "Description": "Role name for IoT device provisiong/rule actions",
+      "Value": { "Ref": "IoTServiceRole" }
+    },
+    "GGOtaS3UrlSignerRoleArn": {
+      "Description": "The IAM role arn for OTA which is used to presign the S3 url which links to the Greengrass software update.",
+      "Value": { "Fn::GetAtt": ["GGOtaS3UrlSignerRole", "Arn"] }
+    }
+  }
+}
